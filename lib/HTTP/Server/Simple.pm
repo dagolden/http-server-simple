@@ -221,12 +221,14 @@ sub spawn {
     my $signal_file = File::Temp::tmpnam();
     unlink($signal_file);
     
+    # must use q() and qq() for command line portability
     my $spawn_command = <<'SPAWN';
         my ($class, $path, $sig_file, $port, @args) = @ARGV;
-        eval "require $class" || require $path;
-        my $server = $class->new($port) or die "Couldn't create server object";
+        eval qq(require $class) || require $path;
+        my $server = $class->new($port) 
+            or die qq(Couldn't create server object);
         $server->{after_setup} = 
-            sub {open my $fh, ">", $sig_file ; print {$fh} 1; close $fh};
+            sub {open my $fh, q(>), $sig_file ; print {$fh} 1; close $fh};
         $server->run(@args);
 SPAWN
     
