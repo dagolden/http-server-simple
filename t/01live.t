@@ -1,7 +1,7 @@
 # -*- perl -*-
 
 use Socket;
-use Test::More tests => 14;
+use Test::More tests => 15;
 use strict;
 
 # This script assumes that `localhost' will resolve to a local IP
@@ -40,9 +40,9 @@ for my $class (@classes) {
     my $s=HTTP::Server::Simple::CGI->new($PORT);
     $s->host("localhost");
     my $pid=$s->background();
-    diag("started server on $pid");
+    pass("started server on $PORT as $pid");
     like($pid, '/^-?\d+$/', 'pid is numeric');
-    select(undef,undef,undef,0.2); # wait a sec
+    sleep 1;
     my $content=fetch("GET / HTTP/1.1", "");
     like($content, '/Congratulations/', "Returns a page");
 
@@ -69,6 +69,7 @@ sub fetch {
     my @response;
     my $alarm = 0;
     my $stage = "init";
+    local *SOCK;
 
     my %messages =
 	( "init" => "inner contemplation",
@@ -120,9 +121,12 @@ sub fetch {
     alarm(5);
 
     my $next;
-    $stage = $next
-	while (!$alarm && $stage ne "done"
-	       && ($next = $states{$stage}->()));
+    while (!$alarm && $stage ne "done"
+           && ($next = $states{$stage}->())) 
+    {
+      warn "# fetch() -- completed '$stage', about to '$next'\n";
+      $stage = $next
+    }
 
     warn "early exit from `$stage' stage; $!" unless $next;
 
@@ -135,12 +139,12 @@ sub fetch {
 sub run_server_tests {
     my $class = shift;
     my $s = $class->new($PORT);
-    is($s->port(),$PORT,"Constructor set port correctly");
+    is($s->port(),$PORT,"Constructor for $class set port correctly ($PORT)");
 
     my $pid=$s->background();
-    select(undef,undef,undef,0.2); # wait a sec
+    sleep 1; # wait a sec
 
-    like($pid, '/^-?\d+$/', 'pid is numeric');
+    like($pid, '/^-?\d+$/', "pid is numeric ($pid)");
 
     my $content=fetch("GET / HTTP/1.1", "");
 
