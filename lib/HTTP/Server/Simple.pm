@@ -197,6 +197,64 @@ sub host {
 
 }
 
+=head2 spawn [PORT, ARGUMENTS]
+
+    require MySimpleServer;
+    $pid = MySimpleServer->spawn( 8888 );
+
+Runs the server as a new subprocess, and returns the process ID of the started
+process.  Port defaults to 8080 and any additional arguments will be passed
+through to the subprocess and provided to L</run>.
+
+=cut
+
+sub spawn {
+    my ($self, $port, @args)  = @_;
+
+    # prepare spawn command
+    $port ||= 8080;
+    my $class = ref $self || $self;
+    (my $path = $class) =~ s{::}{/}g;
+    $path = $INC{"$path.pm"};
+
+    require File::Temp;
+    my $signal_file = File::Temp::tmpnam();
+    unlink($signal_file);
+    
+    my $spawn_command = <<'SPAWN';
+        my ($class, $path, $sig_file, $port, @args) = @ARGV;
+        eval "require $class" || require $path;
+        my $server = $class->new($port) or die "Couldn't create server object";
+        $server->{after_setup} = 
+            sub {open my $fh, ">", $sig_file ; print {$fh} 1; close $fh};
+        $server->run(@args);
+SPAWN
+    
+    my @cmd = ($^X, '-we', $spawn_command, $class, $path, $signal_file, $port, @args);
+
+    # launch the subprocess
+    my $child_pid;
+    if ( $^O eq 'MSWin32' ) {
+        $child_pid = system(1, @cmd);
+    }
+    else {
+        $child_pid = fork;
+        croak "Can't fork: $!" unless defined($child_pid);
+        if (! $child_pid ) { # in child
+            require POSIX;
+            POSIX::setsid()
+                or croak "Can't start a new session: $!";
+            exec @cmd;
+        }
+    }
+    my $start = time;
+    1 until -f $signal_file || (time - $start > 15 );
+    croak "Child process was not ready after 15 seconds\n" 
+        unless -f $signal_file;
+    return $child_pid;
+}
+
+
 =head2 background [ARGUMENTS]
 
 Runs the server in the background, and returns the process ID of the
