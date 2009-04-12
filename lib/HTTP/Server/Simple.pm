@@ -207,15 +207,13 @@ started process.  Any arguments will be passed through to L</run>.
 sub background {
     my $self  = shift;
     require File::Temp;
-    my ($fh, $filename) = File::Temp::tempfile();
+    my $filename = File::Temp::tmpnam();
     unlink($filename);
     my $child = fork;
     croak "Can't fork: $!" unless defined($child);
     if ($child) {
-        while (eof($fh)) {
-            select(undef, undef, undef, 0.1);
-            seek($fh, 0, 0);
-        }
+        1 until -f $filename;
+        unlink $filename;
         return $child;
     }
 
@@ -224,7 +222,11 @@ sub background {
         POSIX::setsid()
             or croak "Can't start a new session: $!";
     }
-    $self->{after_setup} = sub { print {$fh} 1; close $fh };
+    $self->{after_setup} = sub { 
+      open my $fh, ">", $filename; 
+      print {$fh} 1; 
+      close $fh 
+    };
     $self->run(@_);
 }
 
